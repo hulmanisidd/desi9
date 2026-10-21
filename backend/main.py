@@ -3,8 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from auth import get_current_user
 from routes import jobs, outfits, user, vton, wardrobe
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="desI9 API", version="0.1.0")
+from services import db_service
+
+
+@asynccontextmanager
+async def lifespan(app):
+    db_service.fail_stale_jobs()
+    yield
+app = FastAPI(title="desI9 API", version="0.1.0", lifespan=lifespan)
 
 from fastapi.staticfiles import StaticFiles
 from services.storage_service import upload_dir

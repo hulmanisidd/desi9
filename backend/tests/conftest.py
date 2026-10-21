@@ -1,6 +1,8 @@
 import os
 import tempfile
-
+os.environ["DATABASE_URL"] = ""
+os.environ["SUPABASE_URL"] = ""
+os.environ["SUPABASE_KEY"] = ""
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["STUB_TASK_DELAY"] = "0"
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp()

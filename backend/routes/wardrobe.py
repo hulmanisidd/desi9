@@ -4,6 +4,7 @@ from fastapi import (
 
 from auth import get_current_user
 from services import db_service, gemini_service, storage_service, task_queue
+import asyncio
 
 router = APIRouter(prefix="/api/v1/wardrobe", tags=["wardrobe"])
 
@@ -37,7 +38,9 @@ async def upload_wardrobe_item(
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     user_id = user.get("sub", "anonymous")
-    item_id, image_url = storage_service.save_upload(data, file.content_type, "item")
+    item_id, image_url = await asyncio.to_thread(
+        storage_service.save_upload, data, file.content_type, "item"
+    )
     job_id = task_queue.enqueue(
         background_tasks, "wardrobe_upload", user,
         process_wardrobe_item, user_id, item_id, image_url, data, file.content_type,

@@ -1,89 +1,122 @@
-import hashlib
-import threading
-from datetime import datetime, timezone
+import os
 from uuid import uuid4
 
-# In-memory stores. Step 3 swaps these for PostgreSQL; keep the signatures.
-_jobs: dict[str, dict] = {}
-_wardrobe: dict[str, dict[str, dict]] = {}  # user_id -> item_id -> item
-_outfit_cache: dict[str, dict] = {}  # user_id -> {"version", "outfits"}
-_lock = threading.Lock()
+from dotenv import load_dotenv
 
+load_dotenv()
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+if not os.getenv("DATABASE_URL"):
+    # No database configured (local dev without Supabase, and all tests)
+    from services.memory_db import *  # noqa: F401,F403
+    from services.memory_db import fail_stale_jobs  # noqa: F401
+else:
+    from psycopg.rows import dict_row
+    from psycopg.types.json import Jsonb
+    from psycopg_pool import ConnectionPool
 
+    from services.memory_db import version_of  # noqa: F401  (pure function, shared)
 
-# ---------- Jobs ----------
+    _pool: ConnectionPool | None = None
 
-def create_job(job_type: str, user_id: str) -> str:
-    job_id = f"job-{uuid4().hex[:8]}"
-    with _lock:
-        _jobs[job_id] = {
-            "job_id": job_id,
-            "job_type": job_type,
-            "user_id": user_id,
-            "status": "queued",
-            "result_url": None,
-            "metadata": None,
-            "error": None,
-            "created_at": _now(),
-            "updated_at": _now(),
-        }
-    return job_id
+    def _get_pool() -> ConnectionPool:
+        global _pool
+        if _pool is None:
+            _pool = ConnectionPool(
+                os.environ["DATABASE_URL"],
+                min_size=1,
+                max_size=5,
+                open=False,
+                # prepare_threshold=None keeps this working with Supabase's pooler
+                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+            )
+            _pool.open(wait=True, timeout=15)
+        return _pool
 
+    def _run(sql: str, params=None, fetch: str | None = None):
+        with _get_pool().connection() as conn:  # commits on exit
+            cur = conn.execute(sql, params)
+            if fetch == "one":
+                return cur.fetchone()
+            if fetch == "all":
+                return cur.fetchall()
+            return cur.rowcount
 
-def update_job(job_id: str, **fields) -> None:
-    with _lock:
-        if job_id in _jobs:
-            _jobs[job_id].update(fields)
-            _jobs[job_id]["updated_at"] = _now()
+    # ---------- Jobs ----------
 
+    _JOB_FIELDS = {"status", "result_url", "metadata", "error"}
 
-def get_job(job_id: str) -> dict | None:
-    with _lock:
-        job = _jobs.get(job_id)
-        return dict(job) if job else None
+    def create_job(job_type: str, user_id: str) -> str:
+        job_id = f"job-{uuid4().hex[:8]}"
+        _run(
+            "insert into jobs (job_id, job_type, user_id) values (%s, %s, %s)",
+            (job_id, job_type, user_id),
+        )
+        return job_id
 
+    def update_job(job_id: str, **fields) -> None:
+        unknown = set(fields) - _JOB_FIELDS
+        if unknown:
+            raise ValueError(f"Unknown job fields: {unknown}")
+        if not fields:
+            return
+        # Column names come from the whitelist above, so this f-string is safe
+        sets = ", ".join(f"{k} = %s" for k in fields)
+        values = [
+            Jsonb(v) if k == "metadata" and v is not None else v
+            for k, v in fields.items()
+        ]
+        _run(f"update jobs set {sets}, updated_at = now() where job_id = %s", values + [job_id])
 
-# ---------- Wardrobe ----------
+    def get_job(job_id: str) -> dict | None:
+        return _run("select * from jobs where job_id = %s", (job_id,), "one")
 
-def add_wardrobe_item(user_id: str, item: dict) -> None:
-    with _lock:
-        _wardrobe.setdefault(user_id, {})[item["item_id"]] = item
+    def fail_stale_jobs() -> int:
+        """Background tasks die with the server, so anything still queued or
+        processing at startup will never finish. Mark it failed so the UI stops polling."""
+        return _run(
+            "update jobs set status = 'failed', "
+            "error = 'Server restarted before the job finished', updated_at = now() "
+            "where status in ('queued', 'processing')"
+        )
 
+    # ---------- Wardrobe ----------
 
-def list_wardrobe_items(user_id: str) -> list[dict]:
-    with _lock:
-        return [dict(i) for i in _wardrobe.get(user_id, {}).values()]
+    def add_wardrobe_item(user_id: str, item: dict) -> None:
+        _run(
+            "insert into wardrobe_items "
+            "(item_id, user_id, image_url, category, sub_category, color, fabric) "
+            "values (%s, %s, %s, %s, %s, %s, %s)",
+            (
+                item["item_id"], user_id, item["image_url"], item["category"],
+                item.get("sub_category"), item.get("color"), item.get("fabric"),
+            ),
+        )
 
+    def list_wardrobe_items(user_id: str) -> list[dict]:
+        return _run(
+            "select item_id, image_url, category, sub_category, color, fabric "
+            "from wardrobe_items where user_id = %s order by created_at",
+            (user_id,),
+            "all",
+        )
 
-def version_of(items: list[dict]) -> str:
-    """Fingerprint of a wardrobe: changes whenever an item is added or removed."""
-    ids = ",".join(sorted(i["item_id"] for i in items))
-    return hashlib.sha256(ids.encode()).hexdigest()
+    # ---------- Outfit cache ----------
 
+    def get_cached_outfits(user_id: str) -> list[dict] | None:
+        items = list_wardrobe_items(user_id)
+        row = _run(
+            "select version, outfits from outfit_cache where user_id = %s",
+            (user_id,),
+            "one",
+        )
+        if row and row["version"] == version_of(items):
+            return row["outfits"]
+        return None
 
-# ---------- Outfit cache ----------
-
-def get_cached_outfits(user_id: str) -> list[dict] | None:
-    """Returns cached outfits only if the wardrobe hasn't changed since."""
-    items = list_wardrobe_items(user_id)
-    with _lock:
-        cached = _outfit_cache.get(user_id)
-    if cached and cached["version"] == version_of(items):
-        return cached["outfits"]
-    return None
-
-
-def set_cached_outfits(user_id: str, outfits: list[dict], version: str) -> None:
-    with _lock:
-        _outfit_cache[user_id] = {"version": version, "outfits": outfits}
-
-
-def reset_all() -> None:
-    """For tests."""
-    with _lock:
-        _jobs.clear()
-        _wardrobe.clear()
-        _outfit_cache.clear()
+    def set_cached_outfits(user_id: str, outfits: list[dict], version: str) -> None:
+        _run(
+            "insert into outfit_cache (user_id, version, outfits) values (%s, %s, %s) "
+            "on conflict (user_id) do update set "
+            "version = excluded.version, outfits = excluded.outfits, updated_at = now()",
+            (user_id, version, Jsonb(outfits)),
+        )
