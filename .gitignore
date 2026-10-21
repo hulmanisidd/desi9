@@ -1,0 +1,17 @@
+@"
+# Secrets
+.env
+backend/.env
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+"@ | Set-Content -Path .gitignore
