@@ -26,24 +26,6 @@ QUEUE_ENDPOINTS = [
     ("/api/v1/outfits/recommend", {}),
     ("/api/v1/vton/generate", {"json": {"item_ids": ["a"]}}),
 ]
-PLACEHOLDER_ENDPOINTS = [
-    ("/api/v1/user/upload-baseline", {"files": PNG}),
-    ("/api/v1/vton/generate", {"json": {"item_ids": ["a"]}}),
-]
-
-@pytest.mark.parametrize("path,kwargs", PLACEHOLDER_ENDPOINTS)
-def test_endpoint_queues_job_that_completes(path, kwargs):
-    res = client.post(path, headers=headers(), **kwargs)
-    assert res.status_code == 200
-    job_id = res.json()["job_id"]
-
-    # TestClient runs background tasks before returning, so the job is done
-    status = client.get(f"/api/v1/jobs/status/{job_id}", headers=headers())
-    assert status.status_code == 200
-    body = status.json()
-    assert body["status"] == "completed"
-    assert body["result_url"].startswith("https://")
-    assert body["metadata"] is not None
 
 
 def test_status_reflects_lifecycle():

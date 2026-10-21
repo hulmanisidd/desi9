@@ -99,6 +99,28 @@ else:
             (user_id,),
             "all",
         )
+    def get_wardrobe_item(user_id: str, item_id: str) -> dict | None:
+        return _run(
+            "select item_id, image_url, category, sub_category, color, fabric "
+            "from wardrobe_items where user_id = %s and item_id = %s",
+            (user_id, item_id),
+            "one",
+        )
+
+    def set_baseline(user_id: str, baseline_url: str, pose_maps: dict) -> None:
+        _run(
+            "insert into users (user_id, baseline_url, pose_maps) values (%s, %s, %s) "
+            "on conflict (user_id) do update set baseline_url = excluded.baseline_url, "
+            "pose_maps = excluded.pose_maps, updated_at = now()",
+            (user_id, baseline_url, Jsonb(pose_maps)),
+        )
+
+    def get_user(user_id: str) -> dict | None:
+        return _run(
+            "select user_id, baseline_url, pose_maps from users where user_id = %s",
+            (user_id,),
+            "one",
+        )
 
     # ---------- Outfit cache ----------
 

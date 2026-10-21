@@ -38,11 +38,13 @@ def _local_url(filename: str) -> str:
     return f"{base}/uploads/{filename}"
 
 
-def save_upload(data: bytes, mime_type: str, label: str = "item") -> tuple[str, str]:
+def save_upload(
+    data: bytes, mime_type: str, label: str = "item", item_id: str | None = None
+) -> tuple[str, str]:
     """Save bytes under a UUID name (e.g. <uuid>_item.png). Returns (item_id, url).
-    Uses Supabase Storage when configured, local disk otherwise."""
+    Pass item_id to store several files (raw, cleaned) under the same id."""
     ext = ".png" if mime_type == "image/png" else ".jpg"
-    item_id = str(uuid4())
+    item_id = item_id or str(uuid4())
     filename = f"{item_id}_{label}{ext}"
 
     if _use_supabase():
@@ -52,3 +54,11 @@ def save_upload(data: bytes, mime_type: str, label: str = "item") -> tuple[str, 
 
     (upload_dir() / filename).write_bytes(data)
     return item_id, _local_url(filename)
+
+
+def load_upload(url: str) -> bytes:
+    """Fetch a file we saved earlier, given the URL save_upload returned."""
+    filename = Path(url.split("?")[0]).name
+    if _use_supabase():
+        return _client().storage.from_(_bucket()).download(filename)
+    return (upload_dir() / filename).read_bytes()

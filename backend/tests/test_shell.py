@@ -31,10 +31,12 @@ QUEUE_ENDPOINTS = [
     ("post", "/api/v1/wardrobe/upload", {"files": PNG}, "queued"),
     ("post", "/api/v1/user/upload-baseline", {"files": PNG}, "queued"),
     ("post", "/api/v1/outfits/recommend", {}, "queued"),
-    ("post", "/api/v1/vton/generate", {"json": {"item_ids": ["a", "b"]}}, "queued"),
 ]
-# The auth tests still cover the jobs endpoint too
-ENDPOINTS = QUEUE_ENDPOINTS + [("get", "/api/v1/jobs/status/job-1234", {}, "completed")]
+# Auth tests also cover VTON and jobs; VTON behavior is in test_vton.py
+ENDPOINTS = QUEUE_ENDPOINTS + [
+    ("post", "/api/v1/vton/generate", {"json": {"item_ids": ["a", "b"]}}, "queued"),
+    ("get", "/api/v1/jobs/status/job-1234", {}, "completed"),
+]
 
 
 def test_health_is_public():

@@ -8,7 +8,7 @@ _jobs: dict[str, dict] = {}
 _wardrobe: dict[str, dict[str, dict]] = {}  # user_id -> item_id -> item
 _outfit_cache: dict[str, dict] = {}  # user_id -> {"version", "outfits"}
 _lock = threading.Lock()
-
+_users: dict[str, dict] = {}  # user_id -> {"user_id", "baseline_url", "pose_maps"}
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -60,6 +60,23 @@ def list_wardrobe_items(user_id: str) -> list[dict]:
     with _lock:
         return [dict(i) for i in _wardrobe.get(user_id, {}).values()]
 
+def get_wardrobe_item(user_id: str, item_id: str) -> dict | None:
+    with _lock:
+        item = _wardrobe.get(user_id, {}).get(item_id)
+        return dict(item) if item else None
+
+
+def set_baseline(user_id: str, baseline_url: str, pose_maps: dict) -> None:
+    with _lock:
+        _users[user_id] = {
+            "user_id": user_id, "baseline_url": baseline_url, "pose_maps": pose_maps,
+        }
+
+
+def get_user(user_id: str) -> dict | None:
+    with _lock:
+        user = _users.get(user_id)
+        return dict(user) if user else None
 
 def version_of(items: list[dict]) -> str:
     """Fingerprint of a wardrobe: changes whenever an item is added or removed."""
@@ -90,3 +107,4 @@ def reset_all() -> None:
         _jobs.clear()
         _wardrobe.clear()
         _outfit_cache.clear()
+        _users.clear()

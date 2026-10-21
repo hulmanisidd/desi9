@@ -6,15 +6,17 @@ os.environ["SUPABASE_KEY"] = ""
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["STUB_TASK_DELAY"] = "0"
 os.environ["UPLOAD_DIR"] = tempfile.mkdtemp()
+os.environ["VTON_PROVIDER"] = "mock"
 
 import pytest
 
-from services import db_service, gemini_service
+from services import db_service, gemini_service, vton_service
 
 
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch):
     db_service.reset_all()
+    
 
     async def fake_extract(image_bytes, mime_type):
         return {
@@ -37,3 +39,4 @@ def _isolate(monkeypatch):
 
     monkeypatch.setattr(gemini_service, "extract_clothing_metadata", fake_extract)
     monkeypatch.setattr(gemini_service, "recommend_outfits", fake_recommend)
+    monkeypatch.setattr(vton_service, "remove_background", lambda data: data)

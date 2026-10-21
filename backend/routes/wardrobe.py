@@ -12,16 +12,23 @@ ALLOWED_TYPES = {"image/jpeg", "image/png"}
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
+from services import (
+    db_service, gemini_service, storage_service, task_queue, vton_service,
+)
+
+
 async def process_wardrobe_item(
-    user_id: str, item_id: str, image_url: str, data: bytes, mime_type: str
+    user_id: str, item_id: str, data: bytes, mime_type: str
 ) -> dict:
-    # TODO (2.4): run rembg here and send the cleaned image to Gemini instead
-    metadata = await gemini_service.extract_clothing_metadata(data, mime_type)
+    cleaned = await asyncio.to_thread(vton_service.remove_background, data)
+    _, image_url = await asyncio.to_thread(
+        storage_service.save_upload, cleaned, "image/png", "item", item_id
+    )
+    metadata = await gemini_service.extract_clothing_metadata(cleaned, "image/png")
     db_service.add_wardrobe_item(
         user_id, {"item_id": item_id, "image_url": image_url, **metadata}
     )
     return {"result_url": image_url, "metadata": {"item_id": item_id, **metadata}}
-
 
 @router.post("/upload")
 async def upload_wardrobe_item(
@@ -38,12 +45,13 @@ async def upload_wardrobe_item(
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
 
     user_id = user.get("sub", "anonymous")
-    item_id, image_url = await asyncio.to_thread(
-        storage_service.save_upload, data, file.content_type, "item"
+    # Keep the untouched original; the cleaned PNG is saved by the background task
+    item_id, _ = await asyncio.to_thread(
+        storage_service.save_upload, data, file.content_type, "raw"
     )
     job_id = task_queue.enqueue(
         background_tasks, "wardrobe_upload", user,
-        process_wardrobe_item, user_id, item_id, image_url, data, file.content_type,
+        process_wardrobe_item, user_id, item_id, data, file.content_type,
     )
     return {
         "status": "queued",
