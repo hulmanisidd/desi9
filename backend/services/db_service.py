@@ -1,16 +1,20 @@
+import hashlib
 import threading
 from datetime import datetime, timezone
 from uuid import uuid4
 
-# In-memory job store. Swap for PostgreSQL in the database step;
-# keep these function signatures and the routes won't need to change.
+# In-memory stores. Step 3 swaps these for PostgreSQL; keep the signatures.
 _jobs: dict[str, dict] = {}
+_wardrobe: dict[str, dict[str, dict]] = {}  # user_id -> item_id -> item
+_outfit_cache: dict[str, dict] = {}  # user_id -> {"version", "outfits"}
 _lock = threading.Lock()
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
+# ---------- Jobs ----------
 
 def create_job(job_type: str, user_id: str) -> str:
     job_id = f"job-{uuid4().hex[:8]}"
@@ -40,3 +44,46 @@ def get_job(job_id: str) -> dict | None:
     with _lock:
         job = _jobs.get(job_id)
         return dict(job) if job else None
+
+
+# ---------- Wardrobe ----------
+
+def add_wardrobe_item(user_id: str, item: dict) -> None:
+    with _lock:
+        _wardrobe.setdefault(user_id, {})[item["item_id"]] = item
+
+
+def list_wardrobe_items(user_id: str) -> list[dict]:
+    with _lock:
+        return [dict(i) for i in _wardrobe.get(user_id, {}).values()]
+
+
+def version_of(items: list[dict]) -> str:
+    """Fingerprint of a wardrobe: changes whenever an item is added or removed."""
+    ids = ",".join(sorted(i["item_id"] for i in items))
+    return hashlib.sha256(ids.encode()).hexdigest()
+
+
+# ---------- Outfit cache ----------
+
+def get_cached_outfits(user_id: str) -> list[dict] | None:
+    """Returns cached outfits only if the wardrobe hasn't changed since."""
+    items = list_wardrobe_items(user_id)
+    with _lock:
+        cached = _outfit_cache.get(user_id)
+    if cached and cached["version"] == version_of(items):
+        return cached["outfits"]
+    return None
+
+
+def set_cached_outfits(user_id: str, outfits: list[dict], version: str) -> None:
+    with _lock:
+        _outfit_cache[user_id] = {"version": version, "outfits": outfits}
+
+
+def reset_all() -> None:
+    """For tests."""
+    with _lock:
+        _jobs.clear()
+        _wardrobe.clear()
+        _outfit_cache.clear()

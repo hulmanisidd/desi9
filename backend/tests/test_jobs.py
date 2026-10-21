@@ -26,9 +26,12 @@ QUEUE_ENDPOINTS = [
     ("/api/v1/outfits/recommend", {}),
     ("/api/v1/vton/generate", {"json": {"item_ids": ["a"]}}),
 ]
+PLACEHOLDER_ENDPOINTS = [
+    ("/api/v1/user/upload-baseline", {"files": PNG}),
+    ("/api/v1/vton/generate", {"json": {"item_ids": ["a"]}}),
+]
 
-
-@pytest.mark.parametrize("path,kwargs", QUEUE_ENDPOINTS)
+@pytest.mark.parametrize("path,kwargs", PLACEHOLDER_ENDPOINTS)
 def test_endpoint_queues_job_that_completes(path, kwargs):
     res = client.post(path, headers=headers(), **kwargs)
     assert res.status_code == 200

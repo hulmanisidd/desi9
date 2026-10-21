@@ -6,6 +6,11 @@ from routes import jobs, outfits, user, vton, wardrobe
 
 app = FastAPI(title="desI9 API", version="0.1.0")
 
+from fastapi.staticfiles import StaticFiles
+from services.storage_service import upload_dir
+
+app.mount("/uploads", StaticFiles(directory=upload_dir()), name="uploads")
+
 # Local dev origins: VS Code Live Server, common dev ports, and file:// ("null")
 app.add_middleware(
     CORSMiddleware,
