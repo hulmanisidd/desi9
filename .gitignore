@@ -1,6 +1,6 @@
-@"
 # Secrets
 .env
+.env.*
 backend/.env
 
 # Python
@@ -10,8 +10,11 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
+# Dependencies and logs
+node_modules/
+*.log
+
 # OS / editor
 .DS_Store
 Thumbs.db
-.vscode/
-"@ | Set-Content -Path .gitignore
+
