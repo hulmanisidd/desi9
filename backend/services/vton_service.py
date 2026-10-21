@@ -1,6 +1,7 @@
 import io
 import os
-
+import time
+import httpx
 from PIL import Image
 
 _rembg_session = None
@@ -23,11 +24,95 @@ def remove_background(data: bytes) -> bytes:
 
 
 # ---------- Pose extraction ----------
+# ---------- Remote GPU provider ----------
+
+# OOTDiffusion supports upper body, lower body and full dresses only
+OOTD_CATEGORY = {
+    "top": "upperbody",
+    "outerwear": "upperbody",
+    "bottom": "lowerbody",
+    "dress": "dress",
+}
+RETRY_STATUSES = {502, 503, 504}
+
+
+def _make_client() -> httpx.Client:
+    timeout = httpx.Timeout(float(os.getenv("VTON_REMOTE_TIMEOUT", "300")), connect=10.0)
+    return httpx.Client(timeout=timeout)
+
+
+def _remote_render(baseline: bytes, garment: bytes, category: str, retries: int = 2) -> bytes:
+    mapped = OOTD_CATEGORY.get(category)
+    if mapped is None:
+        return baseline  # unsupported by OOTDiffusion: skip, keep the image as is
+
+    base_url = os.getenv("VTON_REMOTE_URL", "").rstrip("/")
+    if not base_url:
+        raise RuntimeError("VTON_REMOTE_URL is not set")
+
+    headers = {
+        "X-API-Key": os.getenv("VTON_REMOTE_KEY", ""),
+        "ngrok-skip-browser-warning": "true",  # free ngrok tunnels otherwise return an HTML page
+    }
+    files = {
+        "baseline": ("baseline.png", baseline, "image/png"),
+        "garment": ("garment.png", garment, "image/png"),
+    }
+
+    last_error = "unknown error"
+    with _make_client() as client:
+        for attempt in range(retries + 1):
+            try:
+                res = client.post(
+                    f"{base_url}/tryon", headers=headers, files=files, data={"category": mapped}
+                )
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                last_error = "could not reach the GPU server (is it running?)"
+            except httpx.ReadTimeout:
+                # Not retried: the render may still be running and a retry would double the wait
+                raise RuntimeError("GPU server took too long to respond")
+            else:
+                if res.status_code in (401, 403):
+                    raise RuntimeError("GPU server rejected the API key (check VTON_REMOTE_KEY)")
+                if res.status_code in RETRY_STATUSES:
+                    last_error = f"GPU server unavailable (HTTP {res.status_code})"
+                elif res.status_code != 200:
+                    raise RuntimeError(
+                        f"GPU server error (HTTP {res.status_code}): {res.text[:200]}"
+                    )
+                elif not res.content.startswith(b"\x89PNG"):
+                    raise RuntimeError("GPU server did not return a PNG image")
+                else:
+                    return res.content
+
+            if attempt < retries:
+                time.sleep(2**attempt)  # 1s, then 2s
+
+    raise RuntimeError(f"Remote try-on failed after {retries + 1} attempts: {last_error}")
+
+
+# ---------- Pose extraction ----------
 
 def extract_pose_maps(image_bytes: bytes) -> dict:
-    if _provider() == "mock":
+    provider = _provider()
+    if provider == "mock":
         return {"provider": "mock"}
-    raise NotImplementedError("Remote pose extraction is not built yet (Module 2.4b)")
+    if provider == "remote":
+        # The GPU server computes pose/parsing per request, so there is nothing to store yet
+        return {"provider": "remote"}
+    raise ValueError(f"Unknown VTON_PROVIDER: {provider}")
+
+
+# ---------- Garment rendering ----------
+
+def render_garment(baseline: bytes, garment: bytes, category: str) -> bytes:
+    """Renders one garment onto the baseline and returns PNG bytes."""
+    provider = _provider()
+    if provider == "mock":
+        return _mock_render(baseline, garment, category)
+    if provider == "remote":
+        return _remote_render(baseline, garment, category)
+    raise ValueError(f"Unknown VTON_PROVIDER: {provider}")
 
 
 # ---------- Garment rendering ----------
@@ -66,9 +151,3 @@ def _mock_render(baseline: bytes, garment: bytes, category: str) -> bytes:
     return out.getvalue()
 
 
-def render_garment(baseline: bytes, garment: bytes, category: str) -> bytes:
-    """Renders one garment onto the baseline and returns PNG bytes.
-    Module 2.4b adds a remote OOTDiffusion provider here."""
-    if _provider() == "mock":
-        return _mock_render(baseline, garment, category)
-    raise NotImplementedError("Remote VTON provider is not built yet (Module 2.4b)")
