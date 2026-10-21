@@ -321,3 +321,94 @@ async function generateVton(itemIds) {
   }
   return apiRequest("/vton/generate", { method: "POST", body: { item_ids: itemIds } });
 }
+
+/* ================================================================
+ * Module 1.3: Async job manager (polling)
+ * ================================================================ */
+
+const POLL_INTERVAL_MS = USE_MOCK ? 1000 : 3000; // plan: ping every 3-5 seconds
+const POLL_TIMEOUT_MS = 5 * 60 * 1000;           // give up after 5 minutes
+const POLL_MAX_RETRIES = 3;                       // consecutive transient failures allowed
+
+function abortError() {
+  const err = new Error("Polling was cancelled.");
+  err.name = "AbortError";
+  return err;
+}
+
+/** Waits `ms`, but rejects early if `signal` is aborted. */
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal && signal.aborted) return reject(abortError());
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(abortError());
+    }
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Polls GET /jobs/status/{job_id} until the job finishes.
+ *
+ * Resolves with the final status body when status is "completed" OR "failed"
+ * (a failed job is a normal 200 response; check `result.status` and show `result.error`).
+ *
+ * Rejects (so ui.js should catch) when:
+ *   - the server answers 4xx (401 expired token, 404 unknown job, ...): no point retrying
+ *   - the server/network keeps failing (more than POLL_MAX_RETRIES times in a row)
+ *   - the timeout passes (err.code === "timeout")
+ *   - the caller aborts (err.name === "AbortError")
+ *
+ * Options:
+ *   onUpdate(statusBody)  called after every successful check (use it to update loading text)
+ *   intervalMs, timeoutMs optional overrides
+ *   signal                an AbortSignal; abort it to stop polling (e.g. user starts a new upload)
+ *
+ * Checks never overlap: the next request is only sent after the previous one finished.
+ */
+async function pollJob(jobId, options = {}) {
+  const {
+    onUpdate = null,
+    intervalMs = POLL_INTERVAL_MS,
+    timeoutMs = POLL_TIMEOUT_MS,
+    signal = null,
+  } = options;
+
+  const startedAt = Date.now();
+  let failuresInARow = 0;
+
+  while (true) {
+    if (signal && signal.aborted) throw abortError();
+
+    let body;
+    try {
+      body = await getJobStatus(jobId);
+      failuresInARow = 0;
+    } catch (err) {
+      const status = err.status;
+      const isTransient = status === 0 || status >= 500;
+      failuresInARow += 1;
+      if (!isTransient || failuresInARow > POLL_MAX_RETRIES) throw err;
+      // transient problem: fall through, wait, and try again
+      body = null;
+    }
+
+    if (body) {
+      if (onUpdate) onUpdate(body);
+      if (body.status === "completed" || body.status === "failed") return body;
+    }
+
+    if (Date.now() - startedAt + intervalMs > timeoutMs) {
+      const err = new Error("This is taking too long. Please try again.");
+      err.code = "timeout";
+      throw err;
+    }
+
+    await sleep(intervalMs, signal);
+  }
+}
