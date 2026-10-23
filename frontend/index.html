@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>desI9 - Virtual Wardrobe</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <h1>desI9</h1>
+    <p class="tagline">Your AI virtual wardrobe</p>
+  </header>
+
+  <main class="app-main">
+
+    <!-- Section 1: Upload clothes (API 1) -->
+    <section id="wardrobeSection" class="card">
+      <h2>1. Upload clothes</h2>
+      <p class="hint">JPEG or PNG. Background removal and tagging run automatically.</p>
+
+      <form id="wardrobeUploadForm" class="upload-form">
+        <input type="file" id="wardrobeFileInput" name="file" accept="image/jpeg,image/png" required />
+        <button type="submit" id="wardrobeUploadBtn" class="btn">Upload item</button>
+      </form>
+
+      <div id="wardrobeStatus" class="status" data-state="idle" role="status" aria-live="polite"></div>
+
+      <h3>Your wardrobe</h3>
+      <div id="wardrobeGrid" class="grid">
+        <p class="empty">No items yet. Upload your first piece above.</p>
+      </div>
+    </section>
+
+    <!-- Section 2: Upload baseline photo (API 2) -->
+    <section id="baselineSection" class="card">
+      <h2>2. Upload your photo</h2>
+      <p class="hint">A clear, front-facing, standing photo works best.</p>
+
+      <form id="baselineUploadForm" class="upload-form">
+        <input type="file" id="baselineFileInput" name="file" accept="image/jpeg,image/png" required />
+        <button type="submit" id="baselineUploadBtn" class="btn">Upload photo</button>
+      </form>
+
+      <div id="baselineStatus" class="status" data-state="idle" role="status" aria-live="polite"></div>
+
+      <img id="baselinePreview" class="preview hidden" alt="Your baseline photo preview" />
+    </section>
+
+    <!-- Section 3: Outfit recommendations (API 3) -->
+    <section id="outfitSection" class="card">
+      <h2>3. Outfit ideas</h2>
+      <p class="hint">Get style pairings from your wardrobe.</p>
+
+      <button type="button" id="recommendBtn" class="btn">Get recommendations</button>
+
+      <div id="outfitStatus" class="status" data-state="idle" role="status" aria-live="polite"></div>
+
+      <div id="outfitCards" class="grid">
+        <p class="empty">No recommendations yet.</p>
+      </div>
+    </section>
+
+    <!-- Section 4: VTON result (API 5) -->
+    <section id="vtonSection" class="card">
+      <h2>4. Virtual try-on</h2>
+      <p class="hint">Select an outfit above, then generate your try-on.</p>
+
+      <button type="button" id="vtonGenerateBtn" class="btn" disabled>Generate try-on</button>
+
+      <div id="vtonStatus" class="status" data-state="idle" role="status" aria-live="polite"></div>
+
+      <div id="vtonResult" class="result">
+        <img id="vtonResultImage" class="result-image hidden" alt="Virtual try-on result" />
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <small>desI9 MVP</small>
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
