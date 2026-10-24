@@ -68,8 +68,10 @@ Notes:
 - `load_dotenv()` does not override variables already set in your terminal. If a setting seems ignored, run `Get-ChildItem Env: | Where-Object Name -like "VTON*"` and `Remove-Item Env:<NAME>`.
 - Without `DATABASE_URL`, data lives in memory and is lost on restart. Tests always use this fallback.
 
-### Supabase setup (skip for in-memory dev)
+### Supabase setup
+**Option A: use the shared project.** Ask the project owner to invite you to the Supabase project, or to send you the `.env` values privately. Copy `DATABASE_URL`, `SUPABASE_URL` and the service key into your own `backend/.env`. The tables and the public `desi9-images` bucket already exist, so skip the SQL below. Use your own Gemini key, and mint your JWT with a different `sub` (for example `dev-user-2`) so your test data doesn't mix with the owner's.
 
+**Option B: create your own project.** Follow the steps below.
 1. Create a project and copy the Postgres connection string into `DATABASE_URL`.
 2. In **Storage**, create a bucket named `desi9-images` and mark it **Public**. (A private bucket makes image URLs return "Bucket not found".)
 3. Create the tables. The reference schema below was reconstructed from `services/db_service.py`; if you have a SQL file in the repo, use that instead.
