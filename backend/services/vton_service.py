@@ -10,7 +10,18 @@ _rembg_session = None
 def _provider() -> str:
     return os.getenv("VTON_PROVIDER", "mock")
 
+from PIL import Image
+import io
 
+def _shrink(data: bytes, max_side: int = 1024) -> bytes:
+    im = Image.open(io.BytesIO(data))
+    im.load()
+    if max(im.size) <= max_side:
+        return data
+    im.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, format="JPEG", quality=92)
+    return buf.getvalue()
 # ---------- Background removal (real, CPU) ----------
 
 def remove_background(data: bytes) -> bytes:
@@ -20,7 +31,7 @@ def remove_background(data: bytes) -> bytes:
 
     if _rembg_session is None:
         _rembg_session = new_session(os.getenv("REMBG_MODEL", "u2net"))
-    return remove(data, session=_rembg_session)
+    return remove(_shrink(data), session=_rembg_session)
 
 
 # ---------- Pose extraction ----------

@@ -14,7 +14,7 @@
  *   A failed job is still HTTP 200 - check `status` and show `error`.
  */
 
-const USE_MOCK = true;
+const USE_MOCK = false;
 const MOCK_FORCE_FAIL = false; // set true in mock mode to test the "failed job" UI
 const BASE_URL = "http://localhost:8000/api/v1";
 const TOKEN_KEY = "jwtToken";
@@ -327,7 +327,7 @@ async function generateVton(itemIds) {
  * ================================================================ */
 
 const POLL_INTERVAL_MS = USE_MOCK ? 1000 : 3000; // plan: ping every 3-5 seconds
-const POLL_TIMEOUT_MS = 5 * 60 * 1000;           // give up after 5 minutes
+const POLL_TIMEOUT_MS = 15 * 60 * 1000;           // give up after 5 minutes
 const POLL_MAX_RETRIES = 3;                       // consecutive transient failures allowed
 
 function abortError() {

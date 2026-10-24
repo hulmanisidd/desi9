@@ -17,19 +17,32 @@ from services import (
 )
 
 
-async def process_wardrobe_item(
-    user_id: str, item_id: str, data: bytes, mime_type: str
-) -> dict:
+import time, logging
+log = logging.getLogger("wardrobe")
+
+async def process_wardrobe_item(user_id, item_id, data, mime_type):
+    t = time.perf_counter()
     cleaned = await asyncio.to_thread(vton_service.remove_background, data)
+    log.warning("rembg: %.1fs, %d KB out", time.perf_counter() - t, len(cleaned) // 1024)
+
+    t = time.perf_counter()
     _, image_url = await asyncio.to_thread(
         storage_service.save_upload, cleaned, "image/png", "item", item_id
     )
+    log.warning("storage: %.1fs", time.perf_counter() - t)
+
+    t = time.perf_counter()
     metadata = await gemini_service.extract_clothing_metadata(cleaned, "image/png")
+    log.warning("gemini: %.1fs", time.perf_counter() - t)
+
     db_service.add_wardrobe_item(
         user_id, {"item_id": item_id, "image_url": image_url, **metadata}
     )
     return {"result_url": image_url, "metadata": {"item_id": item_id, **metadata}}
-
+@router.get("/items")
+def get_wardrobe(user: dict = Depends(get_current_user)):
+    user_id = user.get("sub", "anonymous")
+    return {"items": db_service.list_wardrobe_items(user_id)}
 @router.post("/upload")
 async def upload_wardrobe_item(
     background_tasks: BackgroundTasks,
